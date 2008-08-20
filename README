@@ -1,0 +1,12 @@
+
+This is an Apache module that loads and runs Nu code.
+
+It is very preliminary, currently just a test of feasibility, 
+but it works!  Nu code is loaded and evaluated by an Apache 
+module that I've written in Objective-C.  I've tested it on 
+Leopard Server. It requires a x86_64 build of Nu to run with 
+the default httpd.
+
+mod_nu is released under the Apache License, version 2.0.
+
+Tim Burks
