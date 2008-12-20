@@ -1,0 +1,4 @@
+sudo apxs2 -c -i -a -Wc,"-x objective-c -fconstant-string-class=NSConstantString -I/usr/include/GNUstep/Headers -I/usr/local/include" -Wl,"-L/usr/lib/GNUstep/System/Library/Libraries -lgnustep-base -L/usr/local/lib -lNu --rpath /usr/local/lib " mod_nu.c
+
+
+

@@ -44,6 +44,20 @@
 #include "http_protocol.h"
 #include "ap_config.h"
 
+@interface ApacheRequest : NSObject {
+  request_rec *request;
+}
+@end
+
+@implementation ApacheRequest
+- (void) setRequest:(request_rec *) r {request = r;}
+- (char *) unparsed_uri {return request->unparsed_uri;}
+- (char *) uri {return request->uri;}
+- (char *) filename {return request->filename;}
+- (char *) path_info {return request->path_info;}
+- (char *) args {return request->args;}
+@end
+
 /* The sample content handler */
 static int nu_handler(request_rec *r)
 {
@@ -51,16 +65,19 @@ static int nu_handler(request_rec *r)
         return DECLINED;
     }
     r->content_type = "text/html";      
-
     NSAutoreleasePool *pool = [[NSAutoreleasePool alloc] init];
     NSError *error;
-    NSString *string = [NSString stringWithContentsOfFile:@"/Users/tim/mod_nu/apache.nu" encoding:NSUTF8StringEncoding error:&error];
+    NSString *string = [NSString stringWithContentsOfFile:@"/home/tim/work/mod_nu/apache.nu"];
 
-    NSString *result;
+    ApacheRequest *request = [[ApacheRequest alloc] init];
+    [request setRequest:r];
+
+    NSString *result = @"that is all";
     if (!string) {
         result = [error description];
     } else {
         id parser = [Nu parser];
+	[parser setValue:request forKey:@"request"];
         result = [parser parseEval:string];
     }
 
@@ -68,13 +85,16 @@ static int nu_handler(request_rec *r)
         ap_rputs([result cStringUsingEncoding:NSUTF8StringEncoding], r);
     }
 
+    [request release];
     [pool release];
     return OK;
 }
 
 static void nu_register_hooks(apr_pool_t *p)
 {
+    NSAutoreleasePool *pool = [[NSAutoreleasePool alloc] init];
     NuInit();
+    [pool release];
     ap_hook_handler(nu_handler, NULL, NULL, APR_HOOK_MIDDLE);
 }
 
