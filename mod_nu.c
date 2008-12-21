@@ -49,13 +49,22 @@
 }
 @end
 
+
+NSString *stringWithCString(char *cString) {
+   if (cString) {
+	return [NSString stringWithCString:cString encoding:NSUTF8StringEncoding];
+   } else {
+	return nil;
+   }
+}
+
 @implementation ApacheRequest
 - (void) setRequest:(request_rec *) r {request = r;}
-- (char *) unparsed_uri {return request->unparsed_uri;}
-- (char *) uri {return request->uri;}
-- (char *) filename {return request->filename;}
-- (char *) path_info {return request->path_info;}
-- (char *) args {return request->args;}
+- (NSString *) unparsed_uri {return stringWithCString(request->unparsed_uri);}
+- (NSString *) uri 	    {return stringWithCString(request->uri);}
+- (NSString *) filename     {return stringWithCString(request->filename);}
+- (NSString *) path_info    {return stringWithCString(request->path_info);}
+- (NSString *) args 	    {return stringWithCString(request->args);}
 @end
 
 typedef struct {

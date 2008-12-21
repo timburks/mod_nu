@@ -3,6 +3,13 @@
 (set template
 <<-END
 <h1>Hello World</h1>
+<pre>
+<%= (request unparsed_uri) %>
+<%= (request uri) %>
+<%= (request filename) %>
+<%= (request path_info) %>
+<%= (request args) %>
+</pre>
 <p>
 This message is coming to you from a Nu script being run by an Apache server using the 
 <a href="http://github.com/timburks/mod_nu/tree/master">mod_nu</a> extension.
