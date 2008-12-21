@@ -58,6 +58,16 @@
 - (char *) args {return request->args;}
 @end
 
+typedef struct {
+  char *string;
+} modnu_config;
+
+module AP_MODULE_DECLARE_DATA nu_module;
+
+#ifndef DEFAULT_MODTUT2_STRING
+#define DEFAULT_MODTUT2_STRING "/home/tim/work/mod_nu/apache.nu"
+#endif
+
 /* The sample content handler */
 static int nu_handler(request_rec *r)
 {
@@ -67,12 +77,25 @@ static int nu_handler(request_rec *r)
     r->content_type = "text/html";      
     NSAutoreleasePool *pool = [[NSAutoreleasePool alloc] init];
     NSError *error;
-    NSString *string = [NSString stringWithContentsOfFile:@"/home/tim/work/mod_nu/apache.nu"];
+
+    // Get the module configuration
+    NSString *path = nil;
+
+    modnu_config *perdir_cfg = ap_get_module_config(r->per_dir_config, &nu_module);
+    if (perdir_cfg && perdir_cfg->string) {
+        path = [[NSString alloc] initWithCString:perdir_cfg->string encoding:NSUTF8StringEncoding];
+    } else {
+        modnu_config *s_cfg = ap_get_module_config(r->server->module_config, &nu_module);
+        if (s_cfg && s_cfg->string) {
+            path = [[NSString alloc] initWithCString:s_cfg->string encoding:NSUTF8StringEncoding];
+        }
+    }
+    NSString *string = path ? [NSString stringWithContentsOfFile:path] : @"\"Server error: Nu module not configured\"";
 
     ApacheRequest *request = [[ApacheRequest alloc] init];
     [request setRequest:r];
 
-    NSString *result = @"that is all";
+    NSString *result;
     if (!string) {
         result = [error description];
     } else {
@@ -98,14 +121,61 @@ static void nu_register_hooks(apr_pool_t *p)
     ap_hook_handler(nu_handler, NULL, NULL, APR_HOOK_MIDDLE);
 }
 
+static void *create_modnu_perdir_config(apr_pool_t *p, server_rec *s)
+{
+  modnu_config *newcfg = (modnu_config *) apr_pcalloc(p, sizeof(modnu_config));
+  newcfg->string = 0;
+  return (void *) newcfg;
+}
+
+static void *create_modnu_config(apr_pool_t *p, server_rec *s)
+{
+  modnu_config *newcfg = (modnu_config *) apr_pcalloc(p, sizeof(modnu_config));
+  newcfg->string = 0;
+  return (void *) newcfg;
+}
+
+static const char *set_modnu_perdir_string(cmd_parms *parms, void *mconfig, const char *arg)
+{
+  modnu_config *s_cfg = (modnu_config *) mconfig;
+  s_cfg->string = (char *) arg;
+  return NULL;
+}
+
+static const char *set_modnu_string(cmd_parms *parms, void *mconfig, const char *arg)
+{
+  modnu_config *s_cfg = ap_get_module_config(parms->server->module_config, &nu_module);
+  s_cfg->string = (char *) arg;
+  return NULL;
+}
+
+static const command_rec mod_nu_cmds[] =
+{
+  AP_INIT_TAKE1(
+    "NuDefaultHandler",
+    set_modnu_string,
+    NULL,
+    RSRC_CONF,
+    "NuDefaultHandler (string) Path to the Nu request handler."
+  ),
+  AP_INIT_TAKE1(
+    "NuHandler",
+    set_modnu_perdir_string,
+    NULL,
+    ACCESS_CONF,
+    "NuHandler (string) Path to the Nu request handler."
+  ),
+  {NULL}
+};
+
 /* Dispatch list for API hooks */
 module AP_MODULE_DECLARE_DATA nu_module = {
     STANDARD20_MODULE_STUFF, 
-    NULL,                  /* create per-dir    config structures */
-    NULL,                  /* merge  per-dir    config structures */
-    NULL,                  /* create per-server config structures */
-    NULL,                  /* merge  per-server config structures */
-    NULL,                  /* table of config file commands       */
-    nu_register_hooks  /* register hooks                      */
+    create_modnu_perdir_config, /* create per-dir    config structures */
+    NULL,                       /* merge  per-dir    config structures */
+    create_modnu_config,        /* create per-server config structures */
+    NULL,                       /* merge  per-server config structures */
+    mod_nu_cmds,              /* table of config file commands       */
+    nu_register_hooks           /* register hooks                      */
 };
 

@@ -10,3 +10,13 @@ the default httpd.
 mod_nu is released under the Apache License, version 2.0.
 
 Tim Burks
+
+NOTES:
+
+- to debug apache modules in gdb, run it as follows:
+
+	$ sudo gdb /usr/sbin/apache2 
+	...
+	(gdb) run -X
+
+
