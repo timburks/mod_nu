@@ -9,6 +9,7 @@
 <%= (request filename) %>
 <%= (request path_info) %>
 <%= (request args) %>
+<%= ((request headers) description) %>
 </pre>
 <p>
 This message is coming to you from a Nu script being run by an Apache server using the 

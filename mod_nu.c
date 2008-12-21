@@ -58,6 +58,11 @@ NSString *stringWithCString(char *cString) {
    }
 }
 
+int extract_table_entry(void *rec, const char *key, const char *value) {
+  [((NSMutableDictionary *) rec) setObject:stringWithCString(value) forKey:stringWithCString(key)];
+  return 1;
+}
+
 @implementation ApacheRequest
 - (void) setRequest:(request_rec *) r {request = r;}
 - (NSString *) unparsed_uri {return stringWithCString(request->unparsed_uri);}
@@ -65,6 +70,13 @@ NSString *stringWithCString(char *cString) {
 - (NSString *) filename     {return stringWithCString(request->filename);}
 - (NSString *) path_info    {return stringWithCString(request->path_info);}
 - (NSString *) args 	    {return stringWithCString(request->args);}
+
+// this isn't quite right -- apache tables can have multiple entries per key.
+- (NSMutableDictionary *) headers {
+   NSMutableDictionary *dict = [NSMutableDictionary dictionary];
+   apr_table_do(&extract_table_entry, (void *)dict, request->headers_in, NULL);
+   return dict;
+}
 @end
 
 typedef struct {
