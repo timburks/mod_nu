@@ -40,6 +40,7 @@
 #import <Nu/Nu.h>
 
 #include "httpd.h"
+#include "http_log.h"
 #include "http_config.h"
 #include "http_protocol.h"
 #include "ap_config.h"
@@ -61,6 +62,12 @@ NSString *stringWithCString(char *cString) {
 int extract_table_entry(void *rec, const char *key, const char *value) {
   [((NSMutableDictionary *) rec) setObject:stringWithCString(value) forKey:stringWithCString(key)];
   return 1;
+}
+
+NSMutableDictionary *dictionaryFromTable(apr_table_t *table) {
+   NSMutableDictionary *dict = [NSMutableDictionary dictionary];
+   apr_table_do(&extract_table_entry, (void *)dict, table, NULL);
+   return dict;
 }
 
 @implementation ApacheRequest
@@ -85,9 +92,86 @@ typedef struct {
 
 module AP_MODULE_DECLARE_DATA nu_module;
 
-#ifndef DEFAULT_MODTUT2_STRING
-#define DEFAULT_MODTUT2_STRING "/home/tim/work/mod_nu/apache.nu"
-#endif
+int read_post_body(request_rec *r, char **body);
+
+#define MAX_SIZE 1048576
+
+// from Nick Kew's Apache Modules book
+int read_post_body(request_rec *r, char **body) 
+{
+    int bytes, eos;
+    apr_size_t count;
+    apr_status_t rv;
+    apr_bucket_brigade *bb;
+    apr_bucket_brigade *bbin;
+    char *buf;
+    apr_bucket *b;
+    apr_bucket *nextb;
+    const char *clen = apr_table_get(r->headers_in, "Content-Length");
+
+    if (clen != NULL){
+        bytes = strtol(clen, NULL, 0);
+        if (bytes >= MAX_SIZE) {
+            ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
+                          "Request too big (%d bytes; limit %d)",
+                          bytes, MAX_SIZE);
+            return HTTP_REQUEST_ENTITY_TOO_LARGE;
+        }
+    }
+    else {
+        bytes = MAX_SIZE;
+    }
+    bb = apr_brigade_create(r->pool, r->connection->bucket_alloc);
+    bbin = apr_brigade_create(r->pool, r->connection->bucket_alloc);
+    count = 0;
+    eos = 0;
+    do {
+        rv = ap_get_brigade(r->input_filters, bbin, AP_MODE_READBYTES,
+                            APR_BLOCK_READ, bytes);
+
+        if (rv != APR_SUCCESS) {
+            return HTTP_INTERNAL_SERVER_ERROR;
+        }
+        for (b = APR_BRIGADE_FIRST(bbin);
+             b != APR_BRIGADE_SENTINEL(bbin);
+             b = nextb) {
+            nextb = APR_BUCKET_NEXT(b);
+            if (APR_BUCKET_IS_EOS(b)) {
+                eos = 1;
+            }
+            if (!APR_BUCKET_IS_METADATA(b)) {
+                if (b->length != (apr_size_t)(-1)) {
+                    count += b->length;
+                    if (count > MAX_SIZE) {
+                        apr_bucket_delete(b);
+                    }
+                }
+            }
+            if (count <= MAX_SIZE) {
+                APR_BUCKET_REMOVE(b);
+                APR_BRIGADE_INSERT_TAIL(bb, b);
+            }
+        }
+    }while (!eos);
+    if (count > MAX_SIZE) {
+        ap_log_rerror(APLOG_MARK, APLOG_ERR, rv, r,
+                      "Request too big (%d bytes; limit %d)",
+                      count, MAX_SIZE);
+        return HTTP_REQUEST_ENTITY_TOO_LARGE;
+    }
+    buf = apr_palloc(r->pool, count+1);
+    rv = apr_brigade_flatten(bb, buf, &count);
+    if (rv != APR_SUCCESS) {
+        ap_log_rerror(APLOG_MARK, APLOG_ERR, rv, r,
+                      "Error (flatten) reading form data");
+        return HTTP_INTERNAL_SERVER_ERROR;
+    }
+    buf[count] = '\0';
+    //*form = parse_form_from_string(r, buf);
+    *body = buf;
+    return OK;
+}
+
 
 /* The sample content handler */
 static int nu_handler(request_rec *r)
@@ -113,6 +197,19 @@ static int nu_handler(request_rec *r)
     }
     NSString *string = path ? [NSString stringWithContentsOfFile:path] : @"\"Server error: Nu module not configured\"";
 
+    NSDictionary *formDict = [NSDictionary dictionary];
+
+    if (r->method_number == M_POST) {
+        printf("we have a post\n");
+        char *body;
+        int rv = read_post_body(r, &body);
+        if (rv == OK) {
+ 	   printf("%s\n", body);
+           NSString *postString = [NSString stringWithCString:body encoding:NSUTF8StringEncoding];
+           formDict = [postString urlQueryDictionary];
+        }
+    }
+
     ApacheRequest *request = [[ApacheRequest alloc] init];
     [request setRequest:r];
 
@@ -122,6 +219,7 @@ static int nu_handler(request_rec *r)
     } else {
         id parser = [Nu parser];
 	[parser setValue:request forKey:@"request"];
+        if (formDict) [parser setValue:formDict forKey:@"form"];
         result = [parser parseEval:string];
     }
 
@@ -199,4 +297,131 @@ module AP_MODULE_DECLARE_DATA nu_module = {
     mod_nu_cmds,              /* table of config file commands       */
     nu_register_hooks           /* register hooks                      */
 };
+
+// pulled from Nunja/NuHTTP
+
+@interface NSString (ModNu)
+/*! URL-encode a string. */
+- (NSString *) urlEncode;
+/*! Decode a url-encoded string. */
+- (NSString *) urlDecode;
+/*! Convert a url query into a dictionary. */
+- (NSDictionary *) urlQueryDictionary;
+@end
+
+@interface NSDictionary (ModNu)
+/*! Convert a dictionary into a url query string. */
+- (NSString *) urlQueryString;
+@end
+
+static unichar char_to_int(unichar c)
+{
+    switch (c) {
+        case '0': return 0;
+        case '1': return 1;
+        case '2': return 2;
+        case '3': return 3;
+        case '4': return 4;
+        case '5': return 5;
+        case '6': return 6;
+        case '7': return 7;
+        case '8': return 8;
+        case '9': return 9;
+        case 'A': case 'a': return 10;
+        case 'B': case 'b': return 11;
+        case 'C': case 'c': return 12;
+        case 'D': case 'd': return 13;
+        case 'E': case 'e': return 14;
+        case 'F': case 'f': return 15;
+    }
+    return 0;                                     // not good
+}
+
+static char int_to_char[] = "0123456789ABCDEF";
+
+@implementation NSString(ModNu)
+
+- (NSString *) urlEncode
+{
+    NSMutableString *result = [NSMutableString string];
+    int i = 0;
+    int max = [self length];
+    while (i < max) {
+        unichar c = [self characterAtIndex:i++];
+        if (iswalpha(c) || iswdigit(c) || (c == '-') || (c == '.') || (c == '_') || (c == '~'))
+        #ifdef DARWIN
+            [result appendFormat:@"%C", c];
+        #else
+        [result appendFormat:@"%c", c];
+        #endif
+        else
+            [result appendString:[NSString stringWithFormat:@"%%%c%c", int_to_char[(c/16)%16], int_to_char[c%16]]];
+    }
+    return result;
+}
+
+- (NSString *) urlDecode
+{
+    NSMutableString *result = [NSMutableString string];
+    int i = 0;
+    int max = [self length];
+    while (i < max) {
+        unichar c = [self characterAtIndex:i++];
+        switch (c) {
+            case '+':
+                [result appendString:@" "];
+                break;
+            case '%':
+            #ifdef DARWIN
+                [result appendFormat:@"%C",
+                #else
+                    [result appendFormat:@"%c",
+                #endif
+                    char_to_int([self characterAtIndex:i++])*16
+                    + char_to_int([self characterAtIndex:i++])];
+                break;
+            default:
+            #ifdef DARWIN
+                [result appendFormat:@"%C", c];
+            #else
+                [result appendFormat:@"%c", c];
+            #endif
+        }
+    }
+    return result;
+}
+
+- (NSDictionary *) urlQueryDictionary
+{
+    NSMutableDictionary *result = [NSMutableDictionary dictionary];
+    NSArray *pairs = [self componentsSeparatedByString:@"&"];
+    int i;
+    int max = [pairs count];
+    for (i = 0; i < max; i++) {
+        NSArray *pair = [[pairs objectAtIndex:i] componentsSeparatedByString:@"="];
+        if ([pair count] == 2) {
+            NSString *key = [[pair objectAtIndex:0] urlDecode];
+            NSString *value = [[pair objectAtIndex:1] urlDecode];
+            [result setObject:value forKey:key];
+        }
+    }
+    return result;
+}
+
+@end
+
+@implementation NSDictionary (ModNu)
+- (NSString *) urlQueryString
+{
+    NSMutableString *result = [NSMutableString string];
+    NSEnumerator *keyEnumerator = [[[self allKeys] sortedArrayUsingSelector:@selector(compare:)] objectEnumerator];
+    id key;
+    while (key = [keyEnumerator nextObject]) {
+        if ([result length] > 0) [result appendString:@"&"];
+        [result appendString:[NSString stringWithFormat:@"%@=%@", [key urlEncode], [[[self objectForKey:key] stringValue] urlEncode]]];
+    }
+    return [NSString stringWithString:result];
+}
+
+@end
 

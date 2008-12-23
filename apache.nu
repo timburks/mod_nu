@@ -9,7 +9,8 @@
 <%= (request filename) %>
 <%= (request path_info) %>
 <%= (request args) %>
-<%= ((request headers) description) %>
+<% ((request headers) each:(do (key value) %><%= key %>: <%= value %>
+<% )) %>
 </pre>
 <p>
 This message is coming to you from a Nu script being run by an Apache server using the 
@@ -34,5 +35,6 @@ From the pocket to the cloud, <a href="http://programming.nu">Nu</a>.
 </ul>
 END)
 
-(eval (NuTemplate codeForString:template))
+;; (eval (NuTemplate codeForString:template))
 
+(form description)
